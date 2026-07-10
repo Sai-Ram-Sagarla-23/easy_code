@@ -1,0 +1,1597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OPCOUNT — run, trace, and measure your code</title>
+<style>
+  :root {
+    --bg: #0D1210;
+    --panel: #141B19;
+    --panel-alt: #1B2422;
+    --border: #263330;
+    --border-soft: #1E2925;
+    --text: #E9F2EE;
+    --muted: #8FA69E;
+    --muted-dim: #5C726B;
+    --amber: #E8A33D;
+    --amber-dim: #6B551F;
+    --teal: #4FD1AE;
+    --teal-dim: #1F4A3E;
+    --red: #E8615A;
+    --mono: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace;
+    --sans: 'IBM Plex Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    background-image:
+      linear-gradient(var(--border-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border-soft) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+  }
+
+  ::selection { background: var(--amber-dim); color: var(--text); }
+
+  button, select, input { font-family: inherit; }
+  button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 2px;
+  }
+
+  .app {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 20px 20px 32px;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ---------- Header ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 14px 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .brand {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 19px;
+    letter-spacing: 0.5px;
+    color: var(--text);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .brand::before {
+    content: '';
+    display: inline-block;
+    width: 9px; height: 9px;
+    background: var(--amber);
+    box-shadow: 0 0 8px 1px var(--amber);
+    border-radius: 50%;
+  }
+  .brand-sub {
+    font-family: var(--sans);
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--muted-dim);
+    letter-spacing: 0.3px;
+  }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ctrl {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .ctrl select {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 10px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .run-btn {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    background: var(--amber);
+    color: #201404;
+    border: none;
+    padding: 9px 18px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: filter 0.12s ease, transform 0.06s ease;
+  }
+  .run-btn:hover { filter: brightness(1.08); }
+  .run-btn:active { transform: translateY(1px); }
+  .run-btn:disabled { filter: grayscale(0.6) brightness(0.7); cursor: default; }
+
+  /* ---------- Workspace ---------- */
+  .workspace {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 880px) {
+    .workspace { grid-template-columns: 1fr; }
+  }
+
+  .pane-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--muted-dim);
+    padding: 10px 14px 0;
+  }
+
+  .editor-pane, .output-pane {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .editor-wrap {
+    display: flex;
+    height: 420px;
+    margin-top: 8px;
+  }
+  .gutter {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 21px;
+    color: var(--muted-dim);
+    text-align: right;
+    padding: 12px 10px 12px 0;
+    user-select: none;
+    background: var(--panel-alt);
+    border-right: 1px solid var(--border-soft);
+    overflow: hidden;
+    white-space: pre;
+    min-width: 38px;
+  }
+  #code {
+    flex: 1;
+    resize: none;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 21px;
+    padding: 12px 14px;
+    outline: none;
+    tab-size: 2;
+  }
+
+  .error-banner {
+    margin: 0 14px 14px;
+    padding: 10px 12px;
+    background: rgba(232, 97, 90, 0.1);
+    border: 1px solid var(--red);
+    color: #FFB3AE;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    border-radius: 3px;
+    white-space: pre-wrap;
+  }
+
+  /* ---------- Tabs ---------- */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--muted-dim);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.1em;
+    padding: 13px 10px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s ease;
+  }
+  .tab:hover { color: var(--muted); }
+  .tab.active { color: var(--amber); border-bottom-color: var(--amber); }
+
+  .tab-panel { display: none; height: 462px; overflow: auto; }
+  .tab-panel.active { display: flex; flex-direction: column; }
+
+  .console-out {
+    margin: 0;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--teal);
+    white-space: pre-wrap;
+    word-break: break-word;
+    flex: 1;
+    overflow: auto;
+  }
+  .console-out .err-line { color: var(--red); }
+  .console-out .empty { color: var(--muted-dim); }
+
+  /* ---------- Trace ---------- */
+  .trace-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 0;
+    flex: 1;
+    min-height: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .trace-code {
+    margin: 0;
+    padding: 12px 0;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 21px;
+    overflow: auto;
+    border-right: 1px solid var(--border-soft);
+  }
+  .trace-code .ln {
+    display: block;
+    padding: 0 12px;
+    white-space: pre;
+    color: var(--muted);
+  }
+  .trace-code .ln .num { display: inline-block; width: 26px; color: var(--muted-dim); }
+  .trace-code .ln.current {
+    background: rgba(232, 163, 61, 0.14);
+    color: var(--text);
+    box-shadow: inset 3px 0 0 var(--amber);
+  }
+
+  .trace-side { display: flex; flex-direction: column; overflow: auto; }
+  .trace-block { padding: 12px 14px; border-bottom: 1px solid var(--border-soft); }
+  .trace-block-title {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em;
+    color: var(--muted-dim); margin-bottom: 8px;
+  }
+  .vars-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; }
+  .vars-table td { padding: 3px 4px; border-bottom: 1px solid var(--border-soft); }
+  .vars-table td:first-child { color: var(--muted); width: 40%; }
+  .vars-table td:last-child { color: var(--teal); text-align: right; word-break: break-all; }
+  .step-note { font-family: var(--mono); font-size: 12.5px; color: var(--text); line-height: 1.6; }
+
+  .trace-controls {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+  }
+  .trace-controls button {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 30px; height: 28px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .trace-controls button:hover { border-color: var(--amber); color: var(--amber); }
+  .trace-controls input[type="range"] { flex: 1; accent-color: var(--amber); }
+  #stepLabel { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 64px; text-align: right; }
+
+  /* ---------- Complexity ---------- */
+  .complexity-readout {
+    display: flex; gap: 10px;
+    padding: 14px;
+  }
+  .readout-item {
+    flex: 1;
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px 14px;
+  }
+  .readout-label {
+    display: block;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em;
+    color: var(--muted-dim); margin-bottom: 6px;
+  }
+  .readout-val {
+    display: block;
+    font-family: var(--mono); font-weight: 700; font-size: 26px;
+    color: var(--amber);
+    text-shadow: 0 0 14px rgba(232, 163, 61, 0.35);
+  }
+  #complexityGraph {
+    display: block;
+    margin: 0 14px 10px;
+    width: calc(100% - 28px);
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+  .measured {
+    padding: 0 14px 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .measured b { color: var(--teal); font-weight: 600; }
+  .findings-title {
+    padding: 4px 14px 6px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em;
+    color: var(--muted-dim);
+  }
+  .findings-list {
+    margin: 0; padding: 0 18px 14px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--muted);
+    overflow: auto;
+  }
+  .findings-list li::marker { color: var(--amber); }
+
+  .legend { display: flex; gap: 14px; padding: 0 14px 10px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+  .legend-swatch { width: 12px; height: 3px; border-radius: 2px; }
+
+  footer {
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted-dim);
+    padding: 6px 0 4px;
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">OPCOUNT<span class="brand-sub">// run it, trace it, measure it</span></div>
+      <div class="controls">
+        <label class="ctrl">LANG
+          <select id="langSelect">
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="c">C</option>
+            <option value="java">Java</option>
+          </select>
+        </label>
+        <label class="ctrl">EXAMPLE
+          <select id="exampleSelect">
+            <option value="fib">Recursive Fibonacci</option>
+            <option value="sum">Loop Sum</option>
+            <option value="bubble">Bubble Sort</option>
+          </select>
+        </label>
+        <button id="runBtn" class="run-btn">▶ RUN</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="editor-pane">
+        <div class="pane-label">SOURCE</div>
+        <div class="editor-wrap">
+          <div id="gutter" class="gutter">1</div>
+          <textarea id="code" spellcheck="false"></textarea>
+        </div>
+        <div id="errorBanner" class="error-banner" hidden></div>
+      </section>
+
+      <section class="output-pane">
+        <div class="tabs">
+          <button class="tab active" data-tab="console">CONSOLE</button>
+          <button class="tab" data-tab="trace">TRACE</button>
+          <button class="tab" data-tab="complexity">COMPLEXITY</button>
+        </div>
+        <div class="tab-panels">
+          <div class="tab-panel active" id="panel-console">
+            <pre id="consoleOut" class="console-out"><span class="empty">Press RUN to execute. Output appears here.</span></pre>
+          </div>
+
+          <div class="tab-panel" id="panel-trace">
+            <div class="trace-grid">
+              <pre id="traceCode" class="trace-code"></pre>
+              <div class="trace-side">
+                <div class="trace-block">
+                  <div class="trace-block-title">VARIABLES</div>
+                  <table id="varsTable" class="vars-table"><tr><td colspan="2" style="color:var(--muted-dim)">run the program</td></tr></table>
+                </div>
+                <div class="trace-block" style="flex:1">
+                  <div class="trace-block-title">STEP</div>
+                  <div id="stepNote" class="step-note">—</div>
+                </div>
+              </div>
+            </div>
+            <div class="trace-controls">
+              <button id="stepFirst" title="First step">⏮</button>
+              <button id="stepPrev" title="Previous step">◀</button>
+              <button id="playPause" title="Play / pause">▶</button>
+              <button id="stepNext" title="Next step">▶</button>
+              <button id="stepLast" title="Last step">⏭</button>
+              <input type="range" id="traceSlider" min="0" max="0" value="0">
+              <span id="stepLabel">0 / 0</span>
+            </div>
+          </div>
+
+          <div class="tab-panel" id="panel-complexity">
+            <div class="complexity-readout">
+              <div class="readout-item"><span class="readout-label">TIME COMPLEXITY</span><span id="timeVal" class="readout-val">—</span></div>
+              <div class="readout-item"><span class="readout-label">SPACE COMPLEXITY</span><span id="spaceVal" class="readout-val">—</span></div>
+            </div>
+            <canvas id="complexityGraph" width="600" height="220"></canvas>
+            <div class="legend" id="legend"></div>
+            <div class="measured" id="measured">Run the program to measure actual steps executed.</div>
+            <div class="findings-title">DETECTED PATTERNS</div>
+            <ul id="findingsList" class="findings-list"><li style="color:var(--muted-dim); list-style:none; margin-left:-18px">Nothing analyzed yet.</li></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer>Supports a core subset of each language · static analysis is a heuristic estimate, not a proof</footer>
+  </div>
+
+<script>
+/* ================= ENGINE (parser + interpreter + complexity analyzer) ================= */
+/* ===================== CORE: shared helpers ===================== */
+
+function stripComments(src, lang) {
+  if (lang === 'python') {
+    return src.split('\n').map(line => {
+      let inStr = false, q = '';
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (inStr) { if (c === q && line[i - 1] !== '\\') inStr = false; }
+        else if (c === '"' || c === "'") { inStr = true; q = c; }
+        else if (c === '#') return line.slice(0, i);
+      }
+      return line;
+    }).join('\n');
+  }
+  let out = '', inStr = false, q = '', i = 0;
+  while (i < src.length) {
+    const c = src[i], c2 = src[i + 1];
+    if (inStr) {
+      out += c;
+      if (c === '\\') { out += c2; i += 2; continue; }
+      if (c === q) inStr = false;
+      i++; continue;
+    }
+    if (c === '"' || c === "'") { inStr = true; q = c; out += c; i++; continue; }
+    if (c === '/' && c2 === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
+    if (c === '/' && c2 === '*') { i += 2; while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++; i += 2; continue; }
+    out += c; i++;
+  }
+  return out;
+}
+
+function splitTopLevel(str, sep) {
+  const parts = []; let depth = 0, cur = '', inStr = false, q = '';
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (inStr) { cur += c; if (c === '\\') { cur += str[++i]; continue; } if (c === q) inStr = false; continue; }
+    if (c === '"' || c === "'") { inStr = true; q = c; cur += c; continue; }
+    if ('([{'.includes(c)) depth++;
+    if (')]}'.includes(c)) depth--;
+    if (c === sep && depth === 0) { parts.push(cur); cur = ''; continue; }
+    cur += c;
+  }
+  if (cur.trim() !== '' || parts.length) parts.push(cur);
+  return parts.map(s => s.trim()).filter(s => s !== '');
+}
+
+function findMatching(str, openIdx) {
+  const open = str[openIdx], close = { '(': ')', '{': '}', '[': ']' }[open];
+  let depth = 0;
+  for (let i = openIdx; i < str.length; i++) {
+    if (str[i] === open) depth++;
+    else if (str[i] === close) { depth--; if (depth === 0) return i; }
+  }
+  return str.length - 1;
+}
+
+/* ===================== EXPRESSION NORMALIZATION ===================== */
+
+function normalizeExpr(expr, lang) {
+  let e = (expr || '').trim();
+  if (e === '') return e;
+  if (lang === 'python') {
+    e = e.replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false').replace(/\bNone\b/g, 'null');
+    e = e.replace(/\band\b/g, '&&').replace(/\bor\b/g, '||').replace(/\bnot\s+/g, '!');
+    e = e.replace(/([\w.\]\)]+)\s*\*\*\s*([\w.\(\[\-]+)/g, 'Math.pow($1,$2)');
+    e = e.replace(/([\w.\]\)]+)\s*\/\/\s*([\w.\(\[]+)/g, 'Math.floor($1/$2)');
+  }
+  if (lang === 'java' || lang === 'c') {
+    e = e.replace(/\bnew\s+\w+\s*\[([^\]]*)\]/g, 'new Array($1).fill(0)');
+    // C/Java int arithmetic truncates division; approximate with floor division
+    // since type declarations were stripped during preprocessing.
+    const operand = '(?:\\([^()]*\\)|[\\w.\\]]+)';
+    e = e.replace(new RegExp('(' + operand + ')\\s*\\/\\s*(' + operand + ')', 'g'), 'Math.floor($1/$2)');
+  }
+  return e;
+}
+
+/* ===================== PYTHON PARSER (indentation-based) ===================== */
+
+function parsePython(src) {
+  src = stripComments(src, 'python');
+  const rawLines = src.split('\n');
+  const lines = [];
+  rawLines.forEach((line, idx) => {
+    if (line.trim() === '') return;
+    const indent = line.match(/^[ \t]*/)[0].replace(/\t/g, '    ').length;
+    lines.push({ text: line.trim(), indent, lineNo: idx + 1 });
+  });
+
+  let pos = 0;
+  function parseBlock(baseIndent) {
+    const stmts = [];
+    while (pos < lines.length && lines[pos].indent === baseIndent) {
+      stmts.push(parseStmt());
+    }
+    return stmts;
+  }
+  function bodyAt(parentIndent) {
+    if (pos >= lines.length || lines[pos].indent <= parentIndent) return [];
+    const childIndent = lines[pos].indent;
+    return parseBlock(childIndent);
+  }
+  function parseStmt() {
+    const { text, lineNo, indent } = lines[pos];
+    if (/^def\s+\w+\s*\(/.test(text)) {
+      const name = text.match(/^def\s+(\w+)/)[1];
+      const params = text.slice(text.indexOf('(') + 1, text.lastIndexOf(')')).split(',').map(s => s.trim()).filter(Boolean).map(p => p.split('=')[0].trim());
+      pos++;
+      const body = bodyAt(indent);
+      return { type: 'FuncDecl', name, params, body, line: lineNo };
+    }
+    if (/^for\s+/.test(text)) {
+      const m = text.match(/^for\s+(\w+)\s+in\s+range\s*\(([^)]*)\)\s*:$/);
+      pos++;
+      const body = bodyAt(indent);
+      if (m) {
+        const args = splitTopLevel(m[2], ',').map(a => normalizeExpr(a, 'python'));
+        let startExpr = '0', endExpr = args[0], stepExpr = '1';
+        if (args.length === 2) { startExpr = args[0]; endExpr = args[1]; }
+        if (args.length >= 3) { startExpr = args[0]; endExpr = args[1]; stepExpr = args[2]; }
+        return { type: 'ForRange', varName: m[1], startExpr, endExpr, stepExpr, body, line: lineNo };
+      }
+      const m2 = text.match(/^for\s+(\w+)\s+in\s+(.+)\s*:$/);
+      const iterExpr = normalizeExpr(m2[2], 'python');
+      return { type: 'ForEach', varName: m2[1], iterExpr, body, line: lineNo };
+    }
+    if (/^while\s+.+:$/.test(text)) {
+      const cond = normalizeExpr(text.slice(6, -1), 'python');
+      pos++;
+      const body = bodyAt(indent);
+      return { type: 'While', cond, body, line: lineNo };
+    }
+    if (/^if\s+.+:$/.test(text)) {
+      const cond = normalizeExpr(text.slice(3, -1), 'python');
+      pos++;
+      const cons = bodyAt(indent);
+      let alt = null;
+      if (pos < lines.length && lines[pos].indent === indent && /^elif\s+.+:$/.test(lines[pos].text)) {
+        lines[pos] = Object.assign({}, lines[pos], { text: lines[pos].text.replace(/^elif/, 'if') });
+        alt = [parseStmt()];
+        return { type: 'If', cond, cons, alt, line: lineNo };
+      }
+      if (pos < lines.length && lines[pos].indent === indent && /^else\s*:$/.test(lines[pos].text)) {
+        pos++;
+        alt = bodyAt(indent);
+      }
+      return { type: 'If', cond, cons, alt, line: lineNo };
+    }
+    pos++;
+    return parseSimpleStmt(text, lineNo, 'python');
+  }
+  const body = parseBlock(lines.length ? lines[0].indent : 0);
+  return { type: 'Program', body };
+}
+
+/* ===================== BRACE-LANG PARSER (js/c/java) ===================== */
+
+function preprocessBraceLang(src, lang) {
+  src = stripComments(src, lang);
+  if (lang === 'java') {
+    const hadClass = /^\s*(public\s+|private\s+)?class\s+\w+\s*\{/m.test(src);
+    src = src.replace(/^\s*(public\s+|private\s+)?class\s+\w+\s*\{/m, '');
+    if (hadClass) {
+      const lastBrace = src.lastIndexOf('}');
+      if (lastBrace !== -1) src = src.slice(0, lastBrace) + src.slice(lastBrace + 1);
+    }
+    src = src.replace(/\bpublic\s+static\s+void\s+main\s*\([^)]*\)\s*\{/, '__MAIN__(){');
+    src = src.replace(/\b(public|private|static|final)\s+/g, '');
+    src = src.replace(/\bSystem\.out\.println/g, '__PRINTLN__');
+    src = src.replace(/\bSystem\.out\.print\b/g, '__PRINT__');
+  }
+  if (lang === 'c') {
+    src = src.replace(/^\s*#include\s*<[^>]*>\s*$/gm, '');
+    src = src.replace(/^\s*using\s+namespace\s+std\s*;\s*$/gm, '');
+    src = src.replace(/\bint\s+main\s*\([^)]*\)\s*\{/, '__MAIN__(){');
+    src = src.replace(/\bstd::/g, '');
+    src = src.replace(/\bcout\s*<<((?:[^;])*);/g, (m, rest) => {
+      const parts = rest.split('<<').map(s => s.trim()).filter(s => s && s !== 'endl');
+      return '__COUTPRINT__(' + parts.join(',') + ');';
+    });
+    src = src.replace(/\bprintf\s*\(/g, '__PRINTF__(');
+  }
+  src = src.replace(/\b(int|long|double|float|char|bool|boolean|String|auto|var|void)\s+(\w+\s*\()/g, '$2');
+  src = src.replace(/\b(int|long|double|float|char|bool|boolean|String|auto|var|void)\s+(?=\w+\s*(=|;|\[|,|\)))/g, '');
+  src = src.replace(/(\w+)\[\s*\d*\s*\]\s*=\s*\{([^{}]*)\}/g, '$1 = [$2]');
+  return src;
+}
+
+function parseBraceLang(src, lang) {
+  src = preprocessBraceLang(src, lang);
+  function lineAt(offset) { return src.slice(0, offset).split('\n').length; }
+
+  function parseBlockStr(s, baseOffset) {
+    const stmts = [];
+    let i = 0;
+    while (i < s.length) {
+      while (i < s.length && /\s/.test(s[i])) i++;
+      if (i >= s.length) break;
+      const r = parseOne(s, i, baseOffset);
+      stmts.push(r.stmt);
+      i = r.next;
+    }
+    return stmts;
+  }
+
+  // Parses exactly one statement starting at index i. Returns { stmt, next }.
+  function parseOne(s, i, baseOffset) {
+    while (i < s.length && /\s/.test(s[i])) i++;
+    const lineNo = lineAt(baseOffset + i);
+    let m;
+    if ((m = /^if\s*\(/.exec(s.slice(i)))) {
+      const parenStart = i + m[0].length - 1;
+      const parenEnd = findMatching(s, parenStart);
+      const cond = normalizeExpr(s.slice(parenStart + 1, parenEnd), lang);
+      let j = parenEnd + 1;
+      while (/\s/.test(s[j])) j++;
+      let cons, next;
+      if (s[j] === '{') { const be = findMatching(s, j); cons = parseBlockStr(s.slice(j + 1, be), baseOffset + j + 1); next = be + 1; }
+      else { const r = parseOne(s, j, baseOffset); cons = [r.stmt]; next = r.next; }
+      let k = next;
+      while (k < s.length && /\s/.test(s[k])) k++;
+      let alt = null;
+      if (/^else\b/.test(s.slice(k))) {
+        k += 4;
+        while (/\s/.test(s[k])) k++;
+        if (s[k] === '{') { const be = findMatching(s, k); alt = parseBlockStr(s.slice(k + 1, be), baseOffset + k + 1); k = be + 1; }
+        else { const r = parseOne(s, k, baseOffset); alt = [r.stmt]; k = r.next; }
+        next = k;
+      }
+      return { stmt: { type: 'If', cond, cons, alt, line: lineNo }, next };
+    }
+    if ((m = /^for\s*\(/.exec(s.slice(i)))) {
+      const parenStart = i + m[0].length - 1;
+      const parenEnd = findMatching(s, parenStart);
+      const header = s.slice(parenStart + 1, parenEnd);
+      let j = parenEnd + 1;
+      while (/\s/.test(s[j])) j++;
+      let body, next;
+      if (s[j] === '{') { const be = findMatching(s, j); body = parseBlockStr(s.slice(j + 1, be), baseOffset + j + 1); next = be + 1; }
+      else { const r = parseOne(s, j, baseOffset); body = [r.stmt]; next = r.next; }
+      const parts = splitTopLevel(header, ';');
+      if (parts.length === 3) {
+        const init = parts[0].trim() ? parseSimpleStmt(parts[0], lineNo, lang) : null;
+        const cond = normalizeExpr(parts[1], lang);
+        const update = parts[2].trim() ? parseSimpleStmt(parts[2], lineNo, lang) : null;
+        return { stmt: { type: 'For', init, cond, update, body, line: lineNo }, next };
+      }
+      const fe = header.match(/^\s*(\w+)\s*:\s*(.+)$/);
+      if (fe) return { stmt: { type: 'ForEach', varName: fe[1], iterExpr: normalizeExpr(fe[2], lang), body, line: lineNo }, next };
+      return { stmt: { type: 'Empty', line: lineNo }, next };
+    }
+    if ((m = /^while\s*\(/.exec(s.slice(i)))) {
+      const parenStart = i + m[0].length - 1;
+      const parenEnd = findMatching(s, parenStart);
+      const cond = normalizeExpr(s.slice(parenStart + 1, parenEnd), lang);
+      let j = parenEnd + 1;
+      while (/\s/.test(s[j])) j++;
+      let body, next;
+      if (s[j] === '{') { const be = findMatching(s, j); body = parseBlockStr(s.slice(j + 1, be), baseOffset + j + 1); next = be + 1; }
+      else { const r = parseOne(s, j, baseOffset); body = [r.stmt]; next = r.next; }
+      return { stmt: { type: 'While', cond, body, line: lineNo }, next };
+    }
+    {
+      const nameMatch = /^function\s+(\w+)\s*\(/.exec(s.slice(i));
+      const mainMatch = /^__MAIN__\s*\(/.exec(s.slice(i));
+      const genMatch = /^(\w+)\s*\(/.exec(s.slice(i));
+      if (nameMatch || mainMatch || genMatch) {
+        const parenStart = s.indexOf('(', i);
+        const parenEnd = findMatching(s, parenStart);
+        let j2 = parenEnd + 1;
+        while (j2 < s.length && /\s/.test(s[j2])) j2++;
+        if (s[j2] === '{') {
+          const name = nameMatch ? nameMatch[1] : (mainMatch ? '__MAIN__' : s.slice(i, parenStart).trim());
+          const params = s.slice(parenStart + 1, parenEnd).split(',').map(x => x.trim()).filter(Boolean);
+          const be = findMatching(s, j2);
+          const body = parseBlockStr(s.slice(j2 + 1, be), baseOffset + j2 + 1);
+          return { stmt: { type: 'FuncDecl', name, params, body, line: lineNo }, next: be + 1 };
+        }
+      }
+    }
+    let depth = 0, k = i, inStr = false, q = '';
+    while (k < s.length) {
+      const c = s[k];
+      if (inStr) { if (c === '\\') { k += 2; continue; } if (c === q) inStr = false; k++; continue; }
+      if (c === '"' || c === "'") { inStr = true; q = c; k++; continue; }
+      if ('([{'.includes(c)) depth++;
+      if (')]}'.includes(c)) depth--;
+      if (c === ';' && depth === 0) break;
+      k++;
+    }
+    const stmtText = s.slice(i, k);
+    return { stmt: parseSimpleStmt(stmtText, lineNo, lang), next: k + 1 };
+  }
+
+  const parsed = parseBlockStr(src, 0);
+  const funcDecls = parsed.filter(s => s.type === 'FuncDecl' && s.name !== '__MAIN__');
+  const main = parsed.find(s => s.type === 'FuncDecl' && s.name === '__MAIN__');
+  const topLevelOther = parsed.filter(s => s.type !== 'FuncDecl');
+  const body = main ? [...funcDecls, ...main.body, ...topLevelOther] : parsed;
+  return { type: 'Program', body };
+}
+
+/* ===================== SIMPLE STATEMENT PARSING (shared) ===================== */
+
+function parseSimpleStmt(text, lineNo, lang) {
+  let t = text.trim();
+  if (t === '') return { type: 'Empty', line: lineNo };
+  if (/^(let|const|var)\s+/.test(t)) {
+    const rest = t.replace(/^(let|const|var)\s+/, '');
+    const eq = rest.indexOf('=');
+    if (eq === -1) return { type: 'VarDecl', name: rest.trim(), expr: 'undefined', line: lineNo };
+    return { type: 'VarDecl', name: rest.slice(0, eq).trim(), expr: normalizeExpr(rest.slice(eq + 1), lang), line: lineNo };
+  }
+  if (/^return\b/.test(t)) {
+    const e = t.replace(/^return\s*/, '').trim();
+    return { type: 'Return', expr: e ? normalizeExpr(e, lang) : 'undefined', line: lineNo };
+  }
+  if (/^break$/.test(t)) return { type: 'Break', line: lineNo };
+  if (/^continue$/.test(t)) return { type: 'Continue', line: lineNo };
+  if (/^pass$/.test(t)) return { type: 'Empty', line: lineNo };
+  let pm;
+  if ((pm = /^(print|console\.log|__PRINTLN__|__PRINT__)\s*\((.*)\)$/s.exec(t))) {
+    const args = splitTopLevel(pm[2], ',');
+    return { type: 'Print', sep: ' ', args: args.map(a => normalizeFStringOrExpr(a, lang)), line: lineNo };
+  }
+  if ((pm = /^__COUTPRINT__\s*\((.*)\)$/s.exec(t))) {
+    const args = splitTopLevel(pm[1], ',');
+    return { type: 'Print', sep: '', args: args.map(a => normalizeFStringOrExpr(a, lang)), line: lineNo };
+  }
+  if ((pm = /^__PRINTF__\s*\((.*)\)$/s.exec(t))) {
+    const args = splitTopLevel(pm[1], ',');
+    const fmt = args.shift() || '""';
+    const fmtStr = fmt.trim().replace(/^"|"$/g, '');
+    const out = []; let buf = ''; let ai = 0;
+    for (let i = 0; i < fmtStr.length; i++) {
+      if (fmtStr[i] === '%' && /[dsf]/.test(fmtStr[i + 1])) {
+        out.push(JSON.stringify(buf)); buf = '';
+        out.push(args[ai] !== undefined ? normalizeExpr(args[ai], lang) : '""'); ai++;
+        i++;
+      } else if (fmtStr[i] === '\\' && fmtStr[i + 1] === 'n') { i++; }
+      else buf += fmtStr[i];
+    }
+    if (buf) out.push(JSON.stringify(buf));
+    return { type: 'Print', sep: '', args: out, line: lineNo };
+  }
+  if ((pm = /^(\w+(?:\[[^\]]+\])?)\s*(\+\+|--)$/.exec(t))) return { type: 'Assign', target: pm[1], op: pm[2], expr: null, line: lineNo };
+  if ((pm = /^(\w+(?:\[[^\]]+\])?)\s*(\+=|-=|\*=|\/=)\s*(.+)$/.exec(t))) return { type: 'Assign', target: pm[1], op: pm[2], expr: normalizeExpr(pm[3], lang), line: lineNo };
+  if ((pm = /^(\w+(?:\[[^\]]+\])?)\s*=\s*(?!=)(.+)$/.exec(t))) return { type: 'Assign', target: pm[1], op: '=', expr: normalizeExpr(pm[2], lang), line: lineNo };
+  return { type: 'ExprStmt', expr: normalizeExpr(t, lang), line: lineNo };
+}
+
+function normalizeFStringOrExpr(a, lang) {
+  a = a.trim();
+  const fm = /^f(["'])(.*)\1$/s.exec(a);
+  if (fm) {
+    const inner = fm[2];
+    const parts = []; let buf = '', i = 0;
+    while (i < inner.length) {
+      if (inner[i] === '{') { const end = inner.indexOf('}', i); parts.push({ e: true, v: inner.slice(i + 1, end) }); i = end + 1; }
+      else { buf += inner[i]; i++; if (i === inner.length || inner[i] === '{') { if (buf) parts.push({ e: false, v: buf }); buf = ''; } }
+    }
+    return parts.map(p => p.e ? normalizeExpr(p.v, lang) : JSON.stringify(p.v)).join(' + ');
+  }
+  return normalizeExpr(a, lang);
+}
+
+function parseSource(src, lang) {
+  if (lang === 'python') return parsePython(src);
+  return parseBraceLang(src, lang);
+}
+
+if (typeof module !== 'undefined') module.exports = { parseSource, normalizeExpr, splitTopLevel };
+/* ===================== INTERPRETER ===================== */
+
+function ReturnSignal(value) { this.value = value; }
+function BreakSignal() {}
+function ContinueSignal() {}
+function BudgetError(msg) { this.message = msg; }
+
+function makeInterpreter(program, opts) {
+  opts = opts || {};
+  const maxSteps = opts.maxSteps || 20000;
+  const maxDepth = opts.maxDepth || 300;
+  const onStep = opts.onStep || function () {};
+
+  const funcs = {};
+  const output = [];
+  let stepCount = 0;
+  let callCount = 0;
+  let maxCallDepth = 0;
+
+  function evalExpr(expr, scope) {
+    if (expr === null || expr === undefined || expr === '') return undefined;
+    const merged = Object.create(null);
+    merged.Math = Math;
+    merged.len = (x) => (x && x.length !== undefined) ? x.length : 0;
+    merged.range = (a, b, c) => {
+      const out = [];
+      if (b === undefined) { b = a; a = 0; }
+      if (c === undefined) c = 1;
+      if (c > 0) for (let v = a; v < b; v += c) out.push(v);
+      else for (let v = a; v > b; v += c) out.push(v);
+      return out;
+    };
+    merged.abs = Math.abs; merged.min = Math.min; merged.max = Math.max;
+    merged.floor = Math.floor; merged.sqrt = Math.sqrt;
+    Object.keys(funcs).forEach(name => {
+      merged[name] = (...args) => callFunction(name, args, scope.__depth || 0);
+    });
+    let s = scope;
+    while (s) { Object.keys(s.vars).forEach(k => { merged[k] = s.vars[k]; }); s = s.parent; }
+    try {
+      const fn = new Function('$s', 'with($s){ return (' + expr + '); }');
+      return fn(merged);
+    } catch (e) {
+      throw new Error('Expression error on "' + expr + '": ' + e.message);
+    }
+  }
+
+  function assignTo(target, value, scope) {
+    const m = /^(\w+)\[(.+)\]$/.exec(target);
+    if (m) {
+      const arr = lookup(m[1], scope);
+      const idx = evalExpr(m[2], scope);
+      arr[idx] = value;
+      return;
+    }
+    setVar(target, value, scope);
+  }
+  function lookup(name, scope) {
+    let s = scope;
+    while (s) { if (name in s.vars) return s.vars[name]; s = s.parent; }
+    return undefined;
+  }
+  function setVar(name, value, scope) {
+    let s = scope;
+    while (s) { if (name in s.vars) { s.vars[name] = value; return; } s = s.parent; }
+    scope.vars[name] = value;
+  }
+  function declareVar(name, value, scope) { scope.vars[name] = value; }
+
+  function snapshot(scope) {
+    const vars = {};
+    let s = scope;
+    const seen = new Set();
+    while (s) {
+      Object.keys(s.vars).forEach(k => { if (!seen.has(k)) { seen.add(k); vars[k] = s.vars[k]; } });
+      s = s.parent;
+    }
+    return vars;
+  }
+
+  function step(line, note, scope, extra) {
+    stepCount++;
+    if (stepCount > maxSteps) throw new BudgetError('Execution limit reached (possible infinite loop) after ' + maxSteps + ' steps.');
+    onStep(Object.assign({ line, note, vars: snapshot(scope), output: output.slice(), callDepth: scope.__depth || 0 }, extra || {}));
+  }
+
+  function execBlock(stmts, scope) {
+    for (const st of stmts) execStmt(st, scope);
+  }
+
+  function execStmt(st, scope) {
+    switch (st.type) {
+      case 'Empty': return;
+      case 'FuncDecl':
+        funcs[st.name] = st;
+        step(st.line, 'define ' + st.name + '()', scope);
+        return;
+      case 'VarDecl': {
+        const v = evalExpr(st.expr, scope);
+        declareVar(st.name, v, scope);
+        step(st.line, st.name + ' = ' + fmt(v), scope);
+        return;
+      }
+      case 'Assign': {
+        let v;
+        if (st.op === '++') v = lookup(st.target, scope) + 1;
+        else if (st.op === '--') v = lookup(st.target, scope) - 1;
+        else if (st.op === '=') v = evalExpr(st.expr, scope);
+        else {
+          const cur = /^(\w+)\[/.test(st.target) ? evalExpr(st.target, scope) : lookup(st.target, scope);
+          const rhs = evalExpr(st.expr, scope);
+          if (st.op === '+=') v = cur + rhs;
+          else if (st.op === '-=') v = cur - rhs;
+          else if (st.op === '*=') v = cur * rhs;
+          else if (st.op === '/=') v = cur / rhs;
+        }
+        assignTo(st.target, v, scope);
+        step(st.line, st.target + ' -> ' + fmt(v), scope);
+        return;
+      }
+      case 'Print': {
+        const vals = st.args.map(a => evalExpr(a, scope));
+        const line = vals.map(fmt).join(st.sep !== undefined ? st.sep : ' ');
+        output.push(line);
+        step(st.line, 'print: ' + line, scope, { printed: line });
+        return;
+      }
+      case 'If': {
+        const cond = evalExpr(st.cond, scope);
+        step(st.line, 'if (' + st.cond + ') -> ' + !!cond, scope);
+        if (cond) execBlock(st.cons, childScope(scope));
+        else if (st.alt) execBlock(st.alt, childScope(scope));
+        return;
+      }
+      case 'For': {
+        const s2 = childScope(scope);
+        if (st.init) execStmt(st.init, s2);
+        let guard = 0;
+        while (st.cond ? evalExpr(st.cond, s2) : true) {
+          step(st.line, 'loop check: ' + (st.cond || 'true'), s2);
+          try { execBlock(st.body, childScope(s2)); }
+          catch (e) { if (e instanceof BreakSignal) break; if (!(e instanceof ContinueSignal)) throw e; }
+          if (st.update) execStmt(st.update, s2);
+          if (++guard > maxSteps) throw new BudgetError('Infinite loop guard triggered.');
+        }
+        return;
+      }
+      case 'ForRange': {
+        const s2 = childScope(scope);
+        const start = evalExpr(st.startExpr, s2), end = evalExpr(st.endExpr, s2), inc = evalExpr(st.stepExpr, s2) || 1;
+        for (let v = start; inc > 0 ? v < end : v > end; v += inc) {
+          s2.vars[st.varName] = v;
+          step(st.line, st.varName + ' = ' + v, s2);
+          try { execBlock(st.body, childScope(s2)); }
+          catch (e) { if (e instanceof BreakSignal) break; if (!(e instanceof ContinueSignal)) throw e; }
+        }
+        return;
+      }
+      case 'ForEach': {
+        const s2 = childScope(scope);
+        const iter = evalExpr(st.iterExpr, s2) || [];
+        for (const v of iter) {
+          s2.vars[st.varName] = v;
+          step(st.line, st.varName + ' = ' + fmt(v), s2);
+          try { execBlock(st.body, childScope(s2)); }
+          catch (e) { if (e instanceof BreakSignal) break; if (!(e instanceof ContinueSignal)) throw e; }
+        }
+        return;
+      }
+      case 'While': {
+        const s2 = childScope(scope);
+        let guard = 0;
+        while (evalExpr(st.cond, s2)) {
+          step(st.line, 'while (' + st.cond + ')', s2);
+          try { execBlock(st.body, childScope(s2)); }
+          catch (e) { if (e instanceof BreakSignal) break; if (!(e instanceof ContinueSignal)) throw e; }
+          if (++guard > maxSteps) throw new BudgetError('Infinite loop guard triggered.');
+        }
+        return;
+      }
+      case 'Return': {
+        const v = evalExpr(st.expr, scope);
+        step(st.line, 'return ' + fmt(v), scope);
+        throw new ReturnSignal(v);
+      }
+      case 'Break': step(st.line, 'break', scope); throw new BreakSignal();
+      case 'Continue': step(st.line, 'continue', scope); throw new ContinueSignal();
+      case 'ExprStmt':
+        step(st.line, st.expr, scope);
+        evalExpr(st.expr, scope);
+        return;
+      default: return;
+    }
+  }
+
+  function childScope(parent) { return { vars: {}, parent, __depth: parent.__depth || 0 }; }
+
+  function callFunction(name, args, callerDepth) {
+    const f = funcs[name];
+    if (!f) throw new Error('Unknown function: ' + name);
+    callCount++;
+    if (callCount > maxSteps) throw new BudgetError('Too many function calls (possible runaway recursion).');
+    const depth = (callerDepth || 0) + 1;
+    if (depth > maxDepth) throw new BudgetError('Maximum recursion depth exceeded.');
+    maxCallDepth = Math.max(maxCallDepth, depth);
+    const scope = { vars: {}, parent: null, __depth: depth };
+    f.params.forEach((p, i) => { scope.vars[p] = args[i]; });
+    step(f.line, 'call ' + name + '(' + args.map(fmt).join(', ') + ')', scope);
+    try {
+      execBlock(f.body, scope);
+    } catch (e) {
+      if (e instanceof ReturnSignal) return e.value;
+      throw e;
+    }
+    return undefined;
+  }
+
+  function run() {
+    const root = { vars: {}, parent: null, __depth: 0 };
+    try {
+      execBlock(program.body, root);
+    } catch (e) {
+      if (!(e instanceof ReturnSignal)) throw e;
+    }
+    return { output, stepCount, callCount, maxCallDepth };
+  }
+
+  return { run };
+}
+
+function fmt(v) {
+  if (Array.isArray(v)) return '[' + v.map(fmt).join(', ') + ']';
+  if (typeof v === 'string') return v;
+  if (v === undefined) return 'undefined';
+  if (v === null) return 'null';
+  return JSON.stringify(v);
+}
+
+if (typeof module !== 'undefined') module.exports = { makeInterpreter, BudgetError };
+/* ===================== COMPLEXITY ANALYZER (static) ===================== */
+
+function analyzeComplexity(program) {
+  const funcs = {};
+  program.body.forEach(s => { if (s.type === 'FuncDecl') funcs[s.name] = s; });
+
+  const findings = [];
+  let maxLoopDepth = 0;
+  let hasLogPattern = false;
+  let arraySpace = false;
+
+  function exprHasHalving(expr) {
+    if (!expr) return false;
+    return /\/\s*2\b|Math\.floor\([^)]*\/\s*2\)|>>\s*1|\/\/\s*2/.test(expr);
+  }
+
+  function walkLoops(stmts, depth, ctx) {
+    stmts.forEach(st => {
+      if (st.type === 'For' || st.type === 'While' || st.type === 'ForRange' || st.type === 'ForEach') {
+        const nd = depth + 1;
+        maxLoopDepth = Math.max(maxLoopDepth, nd);
+        ctx.maxLoopDepth = Math.max(ctx.maxLoopDepth, nd);
+        let halves = false;
+        if (st.type === 'While' && exprHasHalving(st.cond)) halves = true;
+        if (st.type === 'For' && st.update && exprHasHalving(JSON.stringify(st.update))) halves = true;
+        if (st.type === 'ForRange' && /\*\s*2|<<\s*1/.test(st.stepExpr || '')) halves = true;
+        // binary-search idiom: a midpoint computed via division by 2, then the
+        // range bounds are narrowed to one side of it each iteration.
+        if (!halves && (st.type === 'While' || st.type === 'For')) {
+          const bodyStr = JSON.stringify(st.body);
+          const hasMid = /\/\s*2\)?\s*"|Math\.floor\([^"]*\/\s*2\)/.test(bodyStr);
+          const narrows = /["\s](\w+)\s*\+\s*1"|["\s](\w+)\s*-\s*1"/.test(bodyStr);
+          if (hasMid && narrows) halves = true;
+        }
+        if (halves) { hasLogPattern = true; findings.push('Loop at line ' + st.line + ' changes its bound geometrically (halving/doubling) — logarithmic pattern.'); }
+        else findings.push('Loop at line ' + st.line + ' (nesting depth ' + nd + ').');
+        walkLoops(st.body, nd, ctx);
+      } else if (st.type === 'If') {
+        walkLoops(st.cons, depth, ctx);
+        if (st.alt) walkLoops(st.alt, depth, ctx);
+      }
+      if (st.type === 'VarDecl' || st.type === 'Assign') {
+        const e = st.expr || '';
+        if (/new Array\(|\.fill\(|\[\s*\]|Array\(/.test(e)) { arraySpace = true; findings.push('Array/list allocation at line ' + st.line + ' — contributes O(n) space if sized by input.'); }
+      }
+    });
+  }
+
+  function countSelfCalls(stmts, name, count) {
+    stmts.forEach(st => {
+      const exprFields = [st.cond, st.expr].filter(Boolean);
+      exprFields.forEach(e => { const m = e.match(new RegExp('\\b' + name + '\\s*\\(', 'g')); if (m) count.n += m.length; });
+      if (st.args) st.args.forEach(a => { const m = a.match(new RegExp('\\b' + name + '\\s*\\(', 'g')); if (m) count.n += m.length; });
+      ['cons', 'alt', 'body'].forEach(k => { if (st[k]) countSelfCalls(st[k], name, count); });
+      if (st.init) countSelfCalls([st.init], name, count);
+      if (st.update) countSelfCalls([st.update], name, count);
+    });
+  }
+
+  // Top-level loop nesting (outside functions)
+  const topCtx = { maxLoopDepth: 0 };
+  walkLoops(program.body.filter(s => s.type !== 'FuncDecl'), 0, topCtx);
+
+  // Per-function analysis: loop depth + recursion pattern
+  let recursionType = null; // null | 'linear' | 'branching'
+  let recursionHalves = false;
+  let maxFuncLoopDepth = 0;
+
+  Object.values(funcs).forEach(f => {
+    const ctx = { maxLoopDepth: 0 };
+    walkLoops(f.body, 0, ctx);
+    maxFuncLoopDepth = Math.max(maxFuncLoopDepth, ctx.maxLoopDepth);
+    const count = { n: 0 };
+    countSelfCalls(f.body, f.name, count);
+    if (count.n >= 2) {
+      recursionType = 'branching';
+      findings.push('Function "' + f.name + '" calls itself ' + count.n + ' times per invocation — branching recursion (e.g. naive Fibonacci pattern).');
+    } else if (count.n === 1) {
+      if (recursionType !== 'branching') recursionType = 'linear';
+      // check if the recursive call argument halves
+      const bodyStr = JSON.stringify(f.body);
+      if (exprHasHalving(bodyStr)) { recursionHalves = true; findings.push('Function "' + f.name + '" recurses on a halved input — logarithmic recursion depth.'); }
+      else findings.push('Function "' + f.name + '" makes a single recursive call per invocation — linear recursion.');
+    }
+  });
+
+  const overallLoopDepth = Math.max(topCtx.maxLoopDepth, maxFuncLoopDepth);
+
+  // Decide time complexity
+  let time, timeReason;
+  if (recursionType === 'branching') {
+    time = 'O(2^n)'; timeReason = 'Branching recursion detected (a function calling itself more than once per call, without evidence of memoization) grows exponentially.';
+  } else if (recursionType === 'linear') {
+    if (recursionHalves) { time = 'O(log n)'; timeReason = 'Single recursive call with the input halved each time.'; }
+    else { time = overallLoopDepth > 0 ? 'O(n^' + (overallLoopDepth + 1) + ')' : 'O(n)'; timeReason = 'Linear recursion' + (overallLoopDepth > 0 ? ' combined with ' + overallLoopDepth + ' nested loop level(s) inside the recursive calls.' : '.'); }
+  } else if (overallLoopDepth === 0) {
+    time = 'O(1)'; timeReason = 'No loops or recursion detected — a fixed number of steps.';
+  } else if (overallLoopDepth === 1 && hasLogPattern) {
+    time = 'O(log n)'; timeReason = 'A single loop whose bound halves/doubles each iteration.';
+  } else if (overallLoopDepth === 1) {
+    time = 'O(n)'; timeReason = 'A single loop that scans the input once.';
+  } else {
+    time = 'O(n^' + overallLoopDepth + ')'; timeReason = overallLoopDepth + ' nested loop levels detected.';
+  }
+
+  // Decide space complexity
+  let space, spaceReason;
+  if (recursionType === 'branching') {
+    space = 'O(n)'; spaceReason = 'Even though the call count explodes, the call stack depth grows linearly with input size.';
+  } else if (recursionType === 'linear') {
+    space = recursionHalves ? 'O(log n)' : 'O(n)'; spaceReason = 'Call stack depth from recursion.' + (arraySpace ? ' Plus array allocation(s) found in the code.' : '');
+  } else if (arraySpace) {
+    space = 'O(n)'; spaceReason = 'Array/list allocation sized by input was detected.';
+  } else {
+    space = 'O(1)'; spaceReason = 'Only a fixed number of scalar variables are used.';
+  }
+
+  return { time, timeReason, space, spaceReason, findings, loopDepth: overallLoopDepth, recursionType };
+}
+
+if (typeof module !== 'undefined') module.exports = { analyzeComplexity };
+
+/* ================= APP UI ================= */
+/* ---------- Examples ---------- */
+const EXAMPLES = {
+  javascript: {
+    fib: `function fib(n) {
+  if (n <= 1) return n;
+  return fib(n - 1) + fib(n - 2);
+}
+
+for (let i = 0; i < 10; i++) {
+  console.log(fib(i));
+}`,
+    sum: `let sum = 0;
+for (let i = 0; i < 20; i++) {
+  sum += i;
+}
+console.log(sum);`,
+    bubble: `function bubbleSort(arr) {
+  for (let i = 0; i < arr.length; i++) {
+    for (let j = 0; j < arr.length - i - 1; j++) {
+      if (arr[j] > arr[j + 1]) {
+        let tmp = arr[j];
+        arr[j] = arr[j + 1];
+        arr[j + 1] = tmp;
+      }
+    }
+  }
+  return arr;
+}
+
+let data = [8, 3, 9, 1, 6, 2];
+console.log(bubbleSort(data));`
+  },
+  python: {
+    fib: `def fib(n):
+    if n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+for i in range(10):
+    print(fib(i))`,
+    sum: `total = 0
+for i in range(20):
+    total = total + i
+print(total)`,
+    bubble: `def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        for j in range(n - i - 1):
+            if arr[j] > arr[j + 1]:
+                tmp = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = tmp
+    return arr
+
+data = [8, 3, 9, 1, 6, 2]
+print(bubble_sort(data))`
+  },
+  c: {
+    fib: `#include <stdio.h>
+
+int fib(int n) {
+    if (n <= 1) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+int main() {
+    for (int i = 0; i < 10; i++) {
+        printf("%d\\n", fib(i));
+    }
+    return 0;
+}`,
+    sum: `int main() {
+    int sum = 0;
+    for (int i = 0; i < 20; i++) {
+        sum += i;
+    }
+    printf("%d", sum);
+    return 0;
+}`,
+    bubble: `int main() {
+    int arr[6] = {8, 3, 9, 1, 6, 2};
+    int n = 6;
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n - i - 1; j++) {
+            if (arr[j] > arr[j + 1]) {
+                int tmp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = tmp;
+            }
+        }
+    }
+    printf("sorted");
+    return 0;
+}`
+  },
+  java: {
+    fib: `public class Main {
+  static int fib(int n) {
+    if (n <= 1) {
+      return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+  }
+
+  public static void main(String[] args) {
+    for (int i = 0; i < 10; i++) {
+      System.out.println(fib(i));
+    }
+  }
+}`,
+    sum: `public class Main {
+  public static void main(String[] args) {
+    int sum = 0;
+    for (int i = 0; i < 20; i++) {
+      sum += i;
+    }
+    System.out.println(sum);
+  }
+}`,
+    bubble: `public class Main {
+  public static void main(String[] args) {
+    int arr[] = {8, 3, 9, 1, 6, 2};
+    int n = 6;
+    for (int i = 0; i < n; i++) {
+      for (int j = 0; j < n - i - 1; j++) {
+        if (arr[j] > arr[j + 1]) {
+          int tmp = arr[j];
+          arr[j] = arr[j + 1];
+          arr[j + 1] = tmp;
+        }
+      }
+    }
+    System.out.println(arr);
+  }
+}`
+  }
+};
+
+const $ = (id) => document.getElementById(id);
+const codeEl = $('code'), gutterEl = $('gutter');
+const langSelect = $('langSelect'), exampleSelect = $('exampleSelect');
+const runBtn = $('runBtn'), errorBanner = $('errorBanner');
+const consoleOut = $('consoleOut');
+const traceCode = $('traceCode'), varsTable = $('varsTable'), stepNote = $('stepNote');
+const traceSlider = $('traceSlider'), stepLabel = $('stepLabel');
+const timeVal = $('timeVal'), spaceVal = $('spaceVal'), findingsList = $('findingsList'), measuredEl = $('measured');
+
+let currentTrace = [];
+let currentLines = [];
+let playTimer = null;
+
+function loadExample() {
+  const lang = langSelect.value, ex = exampleSelect.value;
+  codeEl.value = EXAMPLES[lang][ex];
+  syncGutter();
+}
+
+function syncGutter() {
+  const lines = codeEl.value.split('\n').length;
+  let out = '';
+  for (let i = 1; i <= lines; i++) out += i + '\n';
+  gutterEl.textContent = out;
+}
+codeEl.addEventListener('input', syncGutter);
+codeEl.addEventListener('scroll', () => { gutterEl.scrollTop = codeEl.scrollTop; });
+langSelect.addEventListener('change', loadExample);
+exampleSelect.addEventListener('change', loadExample);
+
+/* ---------- Tabs ---------- */
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    $('panel-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+/* ---------- Run ---------- */
+runBtn.addEventListener('click', runProgram);
+
+function showError(msg) {
+  errorBanner.hidden = false;
+  errorBanner.textContent = msg;
+}
+function clearError() { errorBanner.hidden = true; errorBanner.textContent = ''; }
+
+function runProgram() {
+  clearError();
+  stopPlay();
+  const lang = langSelect.value;
+  const src = codeEl.value;
+  let ast;
+  try {
+    ast = parseSource(src, lang);
+  } catch (e) {
+    showError('Parse error: ' + (e.message || e));
+    return;
+  }
+
+  currentTrace = [];
+  const interp = makeInterpreter(ast, {
+    onStep: (s) => currentTrace.push(s)
+  });
+
+  let result;
+  try {
+    result = interp.run();
+  } catch (e) {
+    if (e && e.message) showError('Runtime error: ' + e.message);
+    else showError('Runtime error.');
+  }
+
+  // Console output
+  if (result) {
+    consoleOut.innerHTML = result.output.length
+      ? result.output.map(l => escapeHtml(l)).join('\n')
+      : '<span class="empty">(no output)</span>';
+  } else if (currentTrace.length) {
+    const partial = currentTrace[currentTrace.length - 1].output || [];
+    consoleOut.innerHTML = (partial.length ? partial.map(l => escapeHtml(l)).join('\n') + '\n' : '') + '<span class="err-line">— execution stopped early, see error above —</span>';
+  } else {
+    consoleOut.innerHTML = '<span class="err-line">No output — see error above.</span>';
+  }
+
+  // Trace panel
+  currentLines = src.split('\n');
+  try {
+    renderTraceCode();
+    traceSlider.max = Math.max(0, currentTrace.length - 1);
+    traceSlider.value = currentTrace.length ? currentTrace.length - 1 : 0;
+    renderStep(currentTrace.length ? currentTrace.length - 1 : -1);
+  } catch (e) { /* trace UI is best-effort; don't block console/complexity panels */ }
+
+  // Complexity panel
+  try {
+    const analysis = analyzeComplexity(ast);
+    renderComplexity(analysis, result);
+  } catch (e) {
+    timeVal.textContent = '—'; spaceVal.textContent = '—';
+    findingsList.innerHTML = '<li>Could not analyze this program.</li>';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+/* ---------- Trace rendering ---------- */
+function renderTraceCode() {
+  traceCode.innerHTML = currentLines.map((l, i) =>
+    '<span class="ln" data-line="' + (i + 1) + '"><span class="num">' + (i + 1) + '</span>' + escapeHtml(l || ' ') + '</span>'
+  ).join('\n');
+}
+
+function renderStep(idx) {
+  const total = currentTrace.length;
+  stepLabel.textContent = total ? (idx + 1) + ' / ' + total : '0 / 0';
+  if (idx < 0 || idx >= total) {
+    varsTable.innerHTML = '<tr><td colspan="2" style="color:var(--muted-dim)">no steps</td></tr>';
+    stepNote.textContent = '—';
+    document.querySelectorAll('.trace-code .ln.current').forEach(el => el.classList.remove('current'));
+    return;
+  }
+  const s = currentTrace[idx];
+  document.querySelectorAll('.trace-code .ln.current').forEach(el => el.classList.remove('current'));
+  const lineEl = traceCode.querySelector('.ln[data-line="' + s.line + '"]');
+  if (lineEl) {
+    lineEl.classList.add('current');
+    if (typeof lineEl.scrollIntoView === 'function') {
+      try { lineEl.scrollIntoView({ block: 'center', behavior: 'auto' }); } catch (e) {}
+    }
+  }
+  const keys = Object.keys(s.vars);
+  varsTable.innerHTML = keys.length
+    ? keys.map(k => '<tr><td>' + escapeHtml(k) + '</td><td>' + escapeHtml(fmt(s.vars[k])) + '</td></tr>').join('')
+    : '<tr><td colspan="2" style="color:var(--muted-dim)">(no variables yet)</td></tr>';
+  stepNote.textContent = 'line ' + s.line + '  —  ' + s.note;
+}
+
+traceSlider.addEventListener('input', () => renderStep(parseInt(traceSlider.value, 10)));
+$('stepFirst').addEventListener('click', () => { stopPlay(); traceSlider.value = 0; renderStep(0); });
+$('stepLast').addEventListener('click', () => { stopPlay(); const v = currentTrace.length - 1; traceSlider.value = v; renderStep(v); });
+$('stepPrev').addEventListener('click', () => { stopPlay(); step(-1); });
+$('stepNext').addEventListener('click', () => { stopPlay(); step(1); });
+function step(delta) {
+  const v = Math.min(currentTrace.length - 1, Math.max(0, parseInt(traceSlider.value, 10) + delta));
+  traceSlider.value = v; renderStep(v);
+}
+$('playPause').addEventListener('click', togglePlay);
+function togglePlay() {
+  if (playTimer) { stopPlay(); return; }
+  if (!currentTrace.length) return;
+  $('playPause').textContent = '⏸';
+  playTimer = setInterval(() => {
+    let v = parseInt(traceSlider.value, 10) + 1;
+    if (v >= currentTrace.length) { stopPlay(); return; }
+    traceSlider.value = v; renderStep(v);
+  }, 220);
+}
+function stopPlay() { if (playTimer) { clearInterval(playTimer); playTimer = null; } $('playPause').textContent = '▶'; }
+
+/* ---------- Complexity rendering ---------- */
+const CURVES = [
+  { key: 'O(1)', label: 'O(1)', fn: (n) => 1, color: '#5C726B' },
+  { key: 'O(log n)', label: 'O(log n)', fn: (n) => Math.log2(n + 1), color: '#4FD1AE' },
+  { key: 'O(n)', label: 'O(n)', fn: (n) => n, color: '#6FA8DC' },
+  { key: 'O(n log n)', label: 'O(n log n)', fn: (n) => n * Math.log2(n + 1), color: '#B48EAD' },
+  { key: 'O(n^2)', label: 'O(n\u00B2)', fn: (n) => n * n, color: '#D98A5F' },
+  { key: 'O(n^3)', label: 'O(n\u00B3)', fn: (n) => n * n * n, color: '#C97A6D' },
+  { key: 'O(2^n)', label: 'O(2\u207F)', fn: (n) => Math.pow(2, Math.min(n, 20)), color: '#E8615A' }
+];
+
+function matchCurveKey(bigO) {
+  const m = /\^(\d+)/.exec(bigO);
+  if (m && !/2\^n/.test(bigO)) {
+    const p = parseInt(m[1], 10);
+    if (p >= 3) return 'O(n^3)';
+    return 'O(n^2)';
+  }
+  if (CURVES.find(c => c.key === bigO)) return bigO;
+  return 'O(n)';
+}
+
+function renderComplexity(analysis, result) {
+  timeVal.textContent = analysis.time;
+  spaceVal.textContent = analysis.space;
+
+  findingsList.innerHTML = analysis.findings.length
+    ? analysis.findings.map(f => '<li>' + escapeHtml(f) + '</li>').join('') + '<li>' + escapeHtml(analysis.timeReason) + '</li>'
+    : '<li>No loops or recursion detected.</li><li>' + escapeHtml(analysis.timeReason) + '</li>';
+
+  if (result) {
+    measuredEl.innerHTML = 'Measured this run: <b>' + result.stepCount + '</b> interpreter steps, <b>' +
+      result.callCount + '</b> function calls, max call-stack depth <b>' + result.maxCallDepth + '</b>.';
+  } else {
+    measuredEl.textContent = 'Run did not complete — measured counts unavailable.';
+  }
+
+  drawGraph(matchCurveKey(analysis.time));
+}
+
+function drawGraph(highlightKey) {
+  const canvas = $('complexityGraph');
+  const ctx = canvas.getContext && canvas.getContext('2d');
+  if (!ctx) return;
+  const w = canvas.width, h = canvas.height;
+  const padL = 34, padB = 22, padT = 12, padR = 12;
+  ctx.clearRect(0, 0, w, h);
+
+  // grid
+  ctx.strokeStyle = 'rgba(143,166,158,0.12)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + (h - padT - padB) * (i / 4);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(143,166,158,0.35)';
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB); ctx.lineTo(w - padR, h - padB); ctx.stroke();
+
+  const N = 20;
+  const maxY = Math.max(...CURVES.map(c => c.fn(N)));
+
+  const legend = $('legend');
+  legend.innerHTML = '';
+
+  CURVES.forEach(c => {
+    const isHi = c.key === highlightKey;
+    ctx.beginPath();
+    ctx.lineWidth = isHi ? 2.6 : 1.3;
+    ctx.strokeStyle = c.color;
+    ctx.globalAlpha = isHi ? 1 : 0.32;
+    if (isHi) { ctx.shadowColor = c.color; ctx.shadowBlur = 8; } else { ctx.shadowBlur = 0; }
+    for (let n = 1; n <= N; n++) {
+      const x = padL + (w - padL - padR) * ((n - 1) / (N - 1));
+      const y = (h - padB) - (h - padT - padB) * (c.fn(n) / maxY);
+      if (n === 1) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = '<span class="legend-swatch" style="background:' + c.color + '; opacity:' + (isHi ? 1 : 0.4) + '"></span>' + c.label;
+    if (isHi) item.style.color = 'var(--text)';
+    legend.appendChild(item);
+  });
+
+  ctx.fillStyle = 'var(--muted-dim)';
+  ctx.font = '10px monospace';
+  ctx.fillText('n \u2192', w - padR - 16, h - padB + 15);
+  ctx.save();
+  ctx.translate(12, padT + 6);
+  ctx.fillText('ops', 0, 0);
+  ctx.restore();
+}
+
+/* ---------- init ---------- */
+loadExample();
+drawGraph('O(n)');
+
+</script>
+</body>
+</html>
